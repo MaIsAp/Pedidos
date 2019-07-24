@@ -4,9 +4,10 @@ library(DT)
 library(png)
 library(googlesheets)
 
-data1<-read.csv("ListadoInvest.csv", header=T)
-data2<-read.csv("ListadoSabor.csv", header=T)
-
+data1<-read.csv("ListadoInvest.csv", header=T , fileEncoding="utf-8")
+data2<-read.csv("ListadoSabor.csv", header=T , fileEncoding="utf-8")
+readRDS("auth.rds")
+Ped<-gs_title("Pedidos")
 
 ui <- fluidPage(
   titlePanel("Pedido"),
@@ -33,26 +34,12 @@ ui <- fluidPage(
   DT::dataTableOutput("resumen"),
   fluidRow(
     column(6,downloadButton("downloadData", "Descargar"))
-  ),
-  conditionalPanel("input.num1 == 2019", column(6,actionButton("clear", label = "Borrar todo")))
-  ###esta funcion habilita el borrado solo para un administrador, que escriba 2019 en el numero en 'Cant.'
+  )
 )
 
 # Define server logic ----
 server <- function(input, output) {
-  if(file.exists("salida.csv")){
-    all_data<-read.csv2("salida.csv")
-  }else{
-    all_data<-data.frame(Investigador=character(),
-                         Op1=character(),
-                         Cant1=numeric(),
-                         Op2=character(),
-                         Cant2=numeric(),
-                         Op3=character(),
-                         Cant3=numeric())
-  }
-
-  output$table <- DT::renderDataTable(df())
+    output$table <- DT::renderDataTable(df())
   df <- eventReactive(input$submit,{
     data<-data.frame(Hora=as.character(as.POSIXct(Sys.time(), tz="America/Bogota")),
                      Investigador=input$inv,
@@ -61,10 +48,16 @@ server <- function(input, output) {
                      Op2=input$sab2,
                      Op3=input$sab3)
      
-    all_data<<-rbind(all_data,data)
-    write.csv2(all_data,"salida.csv",row.names = F)
+    if(nrow(Ped %>% gs_read(ws="Hoja 1"))==0){
+      Ped <- Ped %>% 
+        gs_edit_cells(ws = "Hoja 1", input = data[1,], trim = TRUE)
+    }else{
+      Ped <- Ped %>% 
+        gs_add_row(ws = "Hoja 1", input = data)
+    }
     
-    all_data
+    Ped_df<<-Ped %>% gs_read(ws="Hoja 1")
+    Ped_df
   })
 
   foto<-eventReactive(input$sab1,{
@@ -100,7 +93,7 @@ server <- function(input, output) {
   
   output$resumen <- DT::renderDataTable(res())
   res<-eventReactive(input$submit2,{
-    tabla_res<-all_data %>% group_by(Op1) %>% summarise(n=sum(Cant1))
+    tabla_res<-Ped_df %>% group_by(Op1) %>% summarise(n=sum(Cant1))
     tabla_res
   })
   observeEvent(input$clear,{
@@ -113,7 +106,7 @@ server <- function(input, output) {
       paste("pedidos.csv", sep = "")
     },
     content = function(file) {
-      write.csv(all_data, file, row.names = FALSE)
+      write.csv(Ped_df, file, row.names = FALSE,fileEncoding = "utf-8")
     }
   )
   
